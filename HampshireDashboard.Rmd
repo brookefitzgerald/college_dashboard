@@ -1,0 +1,308 @@
+---
+always_allow_html: yes
+output:
+  html_document: default
+  pdf_document:
+    toc_depth: 3
+---
+
+```{r parametrization, echo=FALSE}
+hdata <- read.csv('HampshireData.csv')
+#hdata <- read.csv('HampshireDataNewYearAdded.csv')
+hgoals <- read.csv('HampshireDataGoals.csv')
+```
+
+```{r, echo=FALSE}
+getOutputFormat <- function() {
+  output <- rmarkdown:::parse_yaml_front_matter(
+    readLines(knitr::current_input())
+    )$output
+  if (is.list(output)){
+    return(names(output)[1])
+  } else {
+    return(output[1])
+  }
+}
+
+interactive <- ifelse(getOutputFormat() == 'html_document',TRUE,FALSE)
+
+```
+
+```{r libraryinit, echo=FALSE,results='hide', message=FALSE, warning=FALSE}
+require(devtools)
+require(reshape2)
+require(sparkline)
+require(ggplot2)
+require(ggthemes)
+require(RColorBrewer)
+require(grid)
+require(gridExtra)
+require(plotly)
+require(dplyr)
+install_github('htmlwidgets/sparkline')
+```
+![](DashboardPicture.png)
+\begin{center}
+\section{`r if(!interactive){"Hampshire College Institutional Dashboard"}`}
+\end{center}
+<center>
+```{r, echo=FALSE, results='hide'}
+ifelse(interactive,toprint<- "Hampshire College Institutional Dashboard", toprint<- "")
+```
+`r if(interactive)eval('#')``r toprint`
+***
+`r if(interactive){"###Click legend  to toggle selection on and off, click and drag on plot to zoom.###"}`
+
+\newpage
+
+#Admissions and Enrollment
+##FY Applications, Admitted Students, and Yield
+
+**Purpose** Measure of success in attracting and enrolling students who choose Hampshire with ethusiasm informed by a clear and comprehensive understanding of the College and its expectations of students.
+**Goal:** 26% Yield
+
+
+
+```{r yieldinit, echo=FALSE}
+myPalette <- c('#e6ac00','#666666','#99e6ff','#0086b3','#cc3300','#009900')
+
+dfm <- melt(hdata[,c('Year','Applications','AdmittedStudents','EnrolledStudents')],id.vars = 1)
+dfm <- na.omit(dfm)
+
+percentdfm <- hdata[,c('Year','YieldPercent')]
+percentdfm <- na.omit(percentdfm)
+
+changedfm <- melt(hdata[,c('Year','ApplicationChange','AdmittedChange','YieldChange')],id.vars = 1)
+changedfm <- na.omit(changedfm)
+
+barplt <- ggplot(dfm,aes(x = Year, y = value, label = value, fill = variable)) + 
+      geom_bar(width = .75, position = "dodge", stat = 'identity') +
+      scale_y_continuous(breaks = seq(0, 3000,500)) + 
+      scale_x_continuous(breaks = seq(min(changedfm$Year),max(changedfm$Year),1)) +
+      geom_hline(yintercept = seq(0, 3000,500), col = "white", lwd=.2) +
+      theme_few(base_size = 10) +  ggtitle('Counts of Applications, Admitted Students, and Enrolled Students') +
+      theme(plot.title = element_text(size=11)) +
+      scale_fill_manual(values = myPalette, name = "", breaks=c("Applications", "AdmittedStudents", "EnrolledStudents"), labels=c("Applications", "Admitted Students", "Enrolled Students")) +
+      labs(x = 'Fiscal Year', y = '') + theme(legend.position= 'bottom',legend.key.size = unit(.5, "cm")) +
+      geom_text(aes(label=value), vjust=0, position = position_dodge(width = .75), family = "serif", size= 2.5) 
+
+YieldGoal <- data.frame( x = c(-Inf, Inf), y = hgoals$YieldGoal, YieldGoal = factor(hgoals$YieldGoal))
+
+percentplt<-ggplot(na.omit(percentdfm),
+                   aes(x=Year, y=YieldPercent)) +
+      geom_line(color = myPalette[2]) + geom_point(color = myPalette[2]) +
+      scale_y_continuous(breaks = seq(0.18, .3,.02), label = sprintf("%1.0f%%",seq(18,30,2)),limits = c(0.18, 0.3)) + 
+      geom_line(aes(x, y, linetype = YieldGoal), YieldGoal,col = myPalette[5])+
+      scale_x_continuous(breaks = seq(min(percentdfm$Year),max(percentdfm$Year),1)) +
+      theme_few(base_size = 10) +  ggtitle('Percent Yield') +
+      theme(legend.position="bottom") +  labs(x = 'Fiscal Year', y = '% of Accepted Students who Enrolled')
+
+
+changeplt <- ggplot(changedfm, aes(x=Year, y=value, colour=variable, group = variable)) +
+      geom_line() + geom_point() +
+      scale_y_continuous(breaks = seq(-1, 1,.1), label = sprintf("%1.0f%%",seq(-100,100,10))) +
+      scale_x_continuous(breaks = seq(min(changedfm$Year),max(changedfm$Year),1)) +
+      theme_few(base_size = 10) +  ggtitle('Yearly Change in Application, Admission, and Yield') +
+      scale_colour_manual(values = myPalette, name = "", breaks=c('ApplicationChange','AdmittedChange','YieldChange'), labels=c('% Change in Applications','% Change in Admittance', '% Change in Yield')) +
+      theme(legend.position="bottom") +  labs(x = 'Fiscal Year', y = '% Change from Previous Year') +
+      geom_vline(xintercept = 2014, col = myPalette[5], linetype = "dotted")
+
+```
+
+```{r yieldplot, fig.width= ifelse(interactive,7,6), fig.height=7, include=TRUE, results = ifelse(interactive,"show","hide"), echo=FALSE}
+gridmat<- matrix(c(1, 1,1, 2, 2,2,3,3), nrow = 8, byrow = TRUE)  
+
+p <- plot_ly(data = dfm, x = Year, y = value, label = value, color = variable, type = "bar", colors = myPalette[3:1],xaxis = "x1", yaxis = "y3")
+p <- add_trace(p, data = changedfm, x=Year, y=value, color=variable, colors = myPalette[3:1], xaxis = "x1", yaxis = "y2",text = paste0(round(value*100,1),"%"), hoverinfo = ("text+name"))
+p <- add_trace(p, x = c(2014,2014), y = c(min(changedfm$value), max(changedfm$value)), mode = "lines", xaxis = "x1", yaxis = "y2", name = "Admission Strategy Changed", line = list(color = myPalette[5], dash = "dash"),text = "More Selective Admissions Strategy Starts", hoverinfo = "text")
+p <- add_trace(p,data = percentdfm, x=Year, y=YieldPercent, colors = myPalette[3:1], xaxis = "x1", yaxis = "y1", name = "Percent Yield", text = paste0(round(YieldPercent*100,1),"%"), hoverinfo = ("text+name"))
+p<- add_trace(p, y = rep(hgoals$YieldGoal,length(percentdfm$Year)), x= min(percentdfm$Year):max(percentdfm$Year), mode = "lines", xaxis = "x1", yaxis = "y1",name = "Yield Goal",line = list(color = myPalette[5]), text = "Yield Goal: 26%", hoverinfo = "text")
+
+p <- layout(p,yaxis = list(anchor = 'x', domain = c(0, 0.20), title = "% Yield", tickmode = "array",tickvals = seq(0,1,.02), ticktext = paste0(seq(0,100,2),"%")),
+            yaxis2 = list(anchor = 'x', domain = c(0.25, 0.60), title = "% Change from Previous Year", tickmode = "array",tickvals = seq(-1,1,.1), ticktext = paste0(seq(-100,100,10),"%")),
+            yaxis3 = list(anchor = 'x', domain = c(0.65, 1), title = 'Count'))
+toplot<- p
+
+if(!interactive) toplot <- grid.arrange(barplt,changeplt,percentplt,layout_matrix = gridmat)
+toplot
+```
+
+```{r retentioninit, echo=FALSE}
+retdfm <- melt(hdata[,c('Year', 'X1YrRetTotal','X1YrRetSoC', 'X1YrRetInt', 'X1YrRetWH.NH')], id.vars = 1)
+retdfm <- na.omit(retdfm)
+
+names<- c("Overall", "Domestic Students of Color", "International Students", "White/Non Hispanic")
+
+PeerMean <- data.frame( x = c(-Inf, Inf), y = hgoals$X1YrRetPeer, PeerMean = factor(hgoals$X1YrRetPeer))
+
+retplt<-ggplot(retdfm, aes(x=Year, y=value, colour=variable, group = variable))+ 
+      geom_line() + geom_point() +
+      scale_x_continuous(breaks = seq(min(retdfm$Year),max(retdfm$Year),1)) +
+      scale_y_continuous(breaks = seq(0, 1,.05), label = sprintf("%1.0f%%",seq(0,100,5))) +
+      theme_few(base_size = 10) +  ggtitle('First Year Retention Rates') +
+      labs(x = ' Year', y = '') + theme(legend.position = "bottom") + 
+      scale_colour_manual(values = myPalette, name = "", labels = c("Overall", "Domestic Students of Color", "International Students", "White/Non Hispanic"))
+
+p2 <- ggplotly(retplt)
+p2 <- add_trace(p2, y = rep(hgoals$X1YrRetPeer,2), x= c(min(retdfm$Year), max(retdfm$Year)), mode = "lines", name = "Peer Mean",line = list(color = myPalette[5]))
+p2 <- plotly_build(p2)
+
+for (i in 1:4){
+      p2$data[[i]]$name<- names[i]
+      p2$data[[i]]$text<-paste0(round(p2$data[[i]]$y*100),"%")
+      p2$data[[i]]$hoverinfo <- ('text+name')
+}
+
+retplt<- retplt + geom_line(aes( x, y, linetype = PeerMean), PeerMean,col = myPalette[5], group = "none")
+```
+\newpage
+
+##Overall First Year Retention, Fall to Fall
+**Purpose:** Measures percentage of first-year undergraduate students who continue into their second year. Indicates whether students are successful in achieving academic and social satisfaction.
+(This measure is also an indication of satisfaction with student life.)
+**Goal:** 89%
+
+```{r retentionplt, echo=FALSE, fig.align="center"}
+toplot <- p2
+if(!interactive) toplot<- retplt
+toplot
+```
+Note: Baldwin Scholars are included in F14 to present.
+
+\newpage
+
+##Holistic Rating of Enrolled Students
+**Purpose:** Measure of Success in enrolling students whose purpses, characteristics, and aspirations are well aligned with Hampshire's educational model and who are likely to thrive in Hampshire's educational environment. 
+**Goal:** Will be set late Fall 2015 by the strategic Enrollment Committee.
+
+```{r admissionsRating,echo=FALSE, fig.align="center"}
+admRateDfm <- hdata[,c("Year", "HARFive", "HARFour", "HARThree", "HARTwo","HAROne")]
+admRateDfm <- melt(admRateDfm, id.vars = 1)
+admRateDfm <- na.omit(admRateDfm)
+
+admRateDfm <- admRateDfm %>% group_by(Year) %>% mutate(pos = cumsum(value) - 0.5*value)
+
+admLabels<-c("Five (Weakest)", "Four", "Three", "Two", "One (Strongest)")
+
+yrs <- length(unique(admRateDfm$Year))
+  
+admRatePlt <- ggplot(admRateDfm,aes(x = Year, y = value, label = value, fill = variable)) + 
+      geom_bar(width = .75, position = "stack", stat = 'identity') +
+      scale_y_continuous(breaks = seq(0, 1,.1), label = sprintf("%1.0f%%",seq(0,100,10))) +      
+      scale_x_continuous(breaks = seq(min(admRateDfm$Year),max(admRateDfm$Year),1)) +
+      theme_few(base_size = 10) +  
+      ggtitle('Holistic Rating of Enrolled Students') +
+      theme(plot.title = element_text(size=11)) +
+      scale_fill_manual(values = myPalette[c(5,1,2,4,3)], name = "", breaks=c("HARFive", "HARFour", "HARThree", "HARTwo","HAROne"), labels=admLabels) +
+      labs(x = 'Year (Fall to Fall)', y = 'Percent of Enrolled Students') + 
+      theme(legend.position= 'bottom',legend.key.size = unit(.5, "cm")) +
+      geom_text(aes(label=paste0(sprintf("%.0f", value*100),"%"), y=pos), vjust = 1, color = c(rep("black",2*yrs), rep("white",yrs),rep("black",2*yrs)))
+
+p3 <- plotly_build(admRatePlt)
+
+for (i in 1:5){
+  p3$data[[i]]$name<- admLabels[i]
+  p3$data[[i]]$text<-paste0(round(p$data[[i]]$y*100),"%")
+  p3$data[[i]]$hoverinfo <- ('text+name')
+  
+}
+if(!interactive) toplot<- admRatePlt
+toplot
+```
+
+
+\newpage
+
+#Academic Program Effectiveness
+##Overall 4 and 6 Year Graduation Rates by Cohort Start Term
+**Purpose:** An objective measure of student academic progress.
+**Goal:** 4 Year Grad Rate at 65% (realized in 2018) and 6 Year Grad Rate at 74% (realized in 2020) for class entering Fall 2014.
+
+```{r 4&6YrGradRates,echo=FALSE, fig.align="center",fig.width= ifelse(interactive,7,6), fig.height=ifelse(interactive,3,7)}
+overallGradDfm1 <- hdata[,c("Year","X4YrGradTot","X6YrGradTot")]
+overallGradDfm2 <- overallGradDfm1
+
+fourGradDfm <- hdata[,c("Year","X4YrGradSoC", "X4YrGradInt", "X4YrGradWH.NH")]
+sixGradDfm <- hdata[,c("Year", "X6YrGradSoc", "X6YrGradInt", "X6YrGradWH.NH")]
+t<-melt(fourGradDfm,id.vars = 1)
+fourGradDfm <- na.omit(melt(fourGradDfm,id.vars = 1))
+sixGradDfm <- na.omit(melt(sixGradDfm,id.vars = 1))
+
+repSix <- length(na.omit(overallGradDfm1$X6YrGradTot))
+repFour <- length(na.omit(overallGradDfm1$X4YrGradTot))
+
+overallGradDfm1$FourYrPeerMean <- c(rep(hgoals$X4YrGradPeer,repFour), rep(NA,(length(overallGradDfm1[,1])-repFour)))
+overallGradDfm1$SixYrPeerMean <- c(rep(hgoals$X6YrGradPeer,repSix), rep(NA,(length(overallGradDfm1[,1])-repSix)))
+
+overallGradDfm1 <- na.omit(melt(overallGradDfm1, id.vars = 1))
+overallGradDfm2 <- na.omit(melt(overallGradDfm2, id.vars = 1))
+
+names <- c("Hampshire 4 Year Graduation Rate", "Hampshire 6 Year Graduation Rate","4 Year Peer Mean", "6 Year Peer Mean")
+names2 <- c("International Students", "Domestic Students of Color","White/Non-Hispanic Students")
+namesPlotly <- c("Domestic Students of Color", "International Students", "White/Non-Hispanic Students")
+
+
+overallGradPlt<-ggplot(overallGradDfm1, aes(x=Year, y=value, colour = variable))+
+      geom_line(aes(colour = variable, size = c(rep(1,repFour), rep(1,repSix), rep(2,repFour), rep(2,repSix)))) + 
+      geom_point(data = overallGradDfm2) +
+      scale_x_continuous(breaks = seq(min(overallGradDfm1$Year),max(overallGradDfm1$Year),2)) +
+      scale_y_continuous(breaks = seq(0, 1,.05), label = sprintf("%1.0f%%",seq(0,100,5))) +
+      theme_few(base_size = 12) +  ggtitle('Overall 4 and 6 Year Graduation Rates') +
+      labs(x = ' Year', y = 'Percent') + theme(legend.position = "bottom")  +
+      scale_size("",range = c(.5,1.2),labels=names[c(1,3,2,4)], breaks=c(1,2,1,2)) + 
+      guides(size = guide_legend(override.aes = list(colour=myPalette[c(1,1,4,4)]))) +
+      scale_colour_manual(values = myPalette[c(1,4,1,4)], labels = names, guide = FALSE)
+
+
+sixGradPlt<- ggplot(sixGradDfm, aes(x = Year, y = value))+
+  geom_segment(aes(y = hgoals$X6YrGradPeer, yend = hgoals$X6YrGradPeer, x = min(sixGradDfm$Year),xend = max(sixGradDfm$Year), linetype = "6 Year Peer Mean"),colour = myPalette[4], size = 1.2)+
+  geom_line(aes(linetype = variable), colour = myPalette[4])+ geom_point(aes(linetype = variable),, colour = myPalette[4])+ 
+  scale_x_continuous(breaks = seq(min(sixGradDfm$Year),max(sixGradDfm$Year),1)) +
+  scale_y_continuous(breaks = seq(0, 1,.1), label = sprintf("%1.0f%%",seq(0,100,10))) +
+  theme_few(base_size = 12) + ggtitle("6 Year Graduation Rates")+
+  labs(x = ' Year', y = 'Percent') + theme(legend.position = "bottom") +
+  guides(linetype=guide_legend(override.aes=list(shape=c(NA,1,1,1)))) +
+  scale_linetype_manual(name = "",values = c("solid","dashed","twodash","dotted"), labels = c("6 Year Peer Mean",names2))
+
+fourGradPlt<- ggplot(fourGradDfm, aes(x = Year, y = value))+
+  geom_segment(aes(y = hgoals$X4YrGradPeer, yend = hgoals$X4YrGradPeer, x = min(fourGradDfm$Year),xend = max(fourGradDfm$Year), linetype = "4 Year Peer Mean"),colour = myPalette[1], size = 1.2)+
+  geom_line(aes(linetype = variable), colour = myPalette[1])+ geom_point(aes(linetype = variable),, colour = myPalette[1])+ 
+  scale_x_continuous(breaks = seq(min(fourGradDfm$Year),max(fourGradDfm$Year),1)) +
+  scale_y_continuous(breaks = seq(0, 1,.1), label = sprintf("%1.0f%%",seq(0,100,10))) +
+  theme_few(base_size = 12) + ggtitle("4 Year Graduation Rates")+
+  labs(x = ' Year', y = 'Percent') + theme(legend.position = "bottom") +
+  guides(color=guide_legend(override.aes=list(shape=c(NA,1,1,1)))) +
+  scale_linetype_manual(name = "",values = c("solid","dashed","twodash","dotted"), labels = c("4 Year Peer Mean",names2))
+
+p4 <- plotly_build(overallGradPlt)
+p5 <-ggplotly(fourGradPlt)
+p5<- add_trace(p5,x = c(min(fourGradDfm$Year), max(fourGradDfm$Year)),y = c(hgoals$X4YrGradPeer, hgoals$X4YrGradPeer), mode = "lines",line = list(color = myPalette[1]),name = "4 Year Peer Mean")
+p5<-plotly_build(p5)
+
+p6 <-ggplotly(sixGradPlt)
+p6<- add_trace(p6,x = c(min(sixGradDfm$Year), max(sixGradDfm$Year)),y = c(hgoals$X6YrGradPeer, hgoals$X6YrGradPeer), mode = "lines",line = list(color = myPalette[4]),name = "6 Year Peer Mean")
+p6 <-plotly_build(p6)
+
+for (i in 1:4){
+      p4$data[[i]]$name<- names[i]
+      p4$data[[i]]$text<- paste0(round(p3$data[[i]]$y*100),'%')
+      p4$data[[i]]$hoverinfo <- ('text+name')
+      p5$data[[i]]$name<- namesPlotly[i-1]
+      p5$data[[i]]$text<- paste0(round(p5$data[[i]]$y*100),'%')
+      p5$data[[i]]$hoverinfo <- ('text+name')
+      p6$data[[i]]$name<- namesPlotly[i-1]
+      p6$data[[i]]$text<- paste0(round(p6$data[[i]]$y*100),'%')
+      p6$data[[i]]$hoverinfo <- ('text+name')
+}
+gradGridMat<- matrix(c(1, 2, 3), nrow = 3) 
+if(!interactive) grid.arrange(overallGradPlt,fourGradPlt,sixGradPlt, layout_matrix = gradGridMat)
+```
+
+```{r,results=ifelse(interactive,"show","hide"),echo=FALSE,fig.width= ifelse(interactive,7,6), fig.height=ifelse(interactive,3,7)}
+p3
+p4
+p5
+```
+
+</center>
+
